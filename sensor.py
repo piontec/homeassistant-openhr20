@@ -1,16 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import aiosqlite
+import os.path
+import os
 
-from datetime import timedelta
 from typing import Any, Callable, Dict, Optional
 
 import voluptuous as vol
+from voluptuous.error import Error
 from homeassistant.components.climate.const import (
     CURRENT_HVAC_HEAT,
     CURRENT_HVAC_OFF,
     HVAC_MODE_HEAT,
-    HVAC_MODE_OFF,
     SUPPORT_TARGET_TEMPERATURE,
 )
 from homeassistant.exceptions import HomeAssistantError
@@ -51,8 +52,14 @@ async def async_setup_platform(
     async_add_entities: Callable,
     discovery_info: Optional[DiscoveryInfoType] = None,
 ) -> None:
-    _LOGGER.info("starting openhr20")
+    _LOGGER.info("Starting openhr20")
     db_path = config[CONF_FILE_PATH]
+    if not os.path.isfile(db_path):
+        raise Error(f"DB file '{db_path}' not found")
+    if not os.access(db_path, os.R_OK):
+        raise Error(f"DB file '{db_path}' is not readable")
+    if not os.access(db_path, os.W_OK):
+        raise Error(f"DB file '{db_path}' is not writable")
     _LOGGER.debug(f"Trying to connect to sqlite DB at '{db_path}'.")
     async with aiosqlite.connect(db_path):
         _LOGGER.debug("DB connection successful")
@@ -63,10 +70,10 @@ async def async_setup_platform(
 
 
 class OpenHR20Sensor(ClimateEntity):
-    def __init__(self, id: str, name: str, db_path: str) -> None:
+    def __init__(self, unique_id: str, name: str, db_path: str) -> None:
         super().__init__()
         self.attrs: Dict[str, Any] = {}
-        self._attr_unique_id = id
+        self._attr_unique_id = unique_id
         self._name = name
         self._state = None
         self._available = True
@@ -85,7 +92,7 @@ class OpenHR20Sensor(ClimateEntity):
                 (self._attr_unique_id,),
             ) as cursor:
                 async for row in cursor:
-                    time = datetime.utcfromtimestamp(row[2])
+                    # time = datetime.utcfromtimestamp(row[2])
                     self._attr_extra_state_attributes = {}
                     self._attr_extra_state_attributes["mode"] = row[3]
                     self._attr_extra_state_attributes["valve"] = int(row[4])
