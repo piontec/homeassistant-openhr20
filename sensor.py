@@ -85,6 +85,19 @@ class OpenHR20Sensor(ClimateEntity):
         self._attr_hvac_mode = HVAC_MODE_HEAT
         self._attr_supported_features = SUPPORT_TARGET_TEMPERATURE
 
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                ("openhr20", self.unique_id)
+            },
+            "name": self.name,
+            "manufacturer": "OpenHR20",
+            "model": "Custom model 1",
+            "sw_version": "0.1.1",
+        }
+
     async def async_update(self):
         async with aiosqlite.connect(self._db_path) as db:
             async with db.execute(
