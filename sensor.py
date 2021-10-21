@@ -5,9 +5,10 @@ import os.path
 import os
 
 from typing import Any, Callable, Dict, Optional
+from homeassistant.helpers.entity import Entity
 
-import voluptuous as vol
 from voluptuous.error import Error
+from homeassistant import config_entries, core
 from homeassistant.components.climate.const import (
     CURRENT_HVAC_HEAT,
     CURRENT_HVAC_OFF,
@@ -16,7 +17,6 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.components.climate import ClimateEntity
-import homeassistant.helpers.config_validation as cv
 
 from homeassistant.helpers.typing import (
     ConfigType,
@@ -30,97 +30,106 @@ from homeassistant.const import (
     TEMP_CELSIUS,
 )
 
+from .const import DOMAIN, CONF_THERMO
+
+
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=1)
 
-CONF_THERMO = "thermostats"
-THERMO_SCHEMA = vol.Schema(
-    {vol.Required(CONF_ID): cv.positive_int, vol.Required(CONF_NAME): cv.string}
-)
+ohr20_values_mapping = [
+    ("mode", 3),
+    ("valve", 4),
+    ("current_temperature", 5),
+    ("target_temperature", 6),
+    ("battery_v", 7),
+    ("error", 8),
+    ("window", 9),
+    ("force", 10),
+]
 
-PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA_BASE.extend(
-    {
-        vol.Required(CONF_FILE_PATH): cv.string,
-        vol.Required(CONF_THERMO): vol.All(cv.ensure_list, [THERMO_SCHEMA]),
-    }
-)
 
-
-async def async_setup_platform(
-    hass: HomeAssistantError,
-    config: ConfigType,
-    async_add_entities: Callable,
-    discovery_info: Optional[DiscoveryInfoType] = None,
-) -> None:
-    _LOGGER.info("Starting openhr20")
-    db_path = config[CONF_FILE_PATH]
-    if not os.path.isfile(db_path):
-        raise Error(f"DB file '{db_path}' not found")
-    if not os.access(db_path, os.R_OK):
-        raise Error(f"DB file '{db_path}' is not readable")
-    if not os.access(db_path, os.W_OK):
-        raise Error(f"DB file '{db_path}' is not writable")
-    _LOGGER.debug(f"Trying to connect to sqlite DB at '{db_path}'.")
-    async with aiosqlite.connect(db_path):
-        _LOGGER.debug("DB connection successful")
+async def async_setup_entry(
+    hass: core.HomeAssistant,
+    config_entry: config_entries.ConfigEntry,
+    async_add_entities,
+):
+    """Setup sensors from a config entry created in the integrations UI."""
+    # DOMAIN key exc
+    # config = hass.data[DOMAIN][config_entry.entry_id]
+    thermo_id, thermo_name = config_entry.data[CONF_THERMO].split("=")
+    db_path = config_entry.data[CONF_FILE_PATH]
     sensors = [
-        OpenHR20Sensor(t[CONF_ID], t[CONF_NAME], db_path) for t in config[CONF_THERMO]
+        OpenHR20Sensor(thermo_id, thermo_name, db_path, m[0], m[1])
+        for m in ohr20_values_mapping
     ]
     async_add_entities(sensors, update_before_add=True)
 
 
-class OpenHR20Sensor(ClimateEntity):
-    def __init__(self, unique_id: str, name: str, db_path: str) -> None:
+class OpenHR20Sensor(Entity):
+    def __init__(
+        self,
+        thermo_id: str,
+        thermo_name: str,
+        db_path: str,
+        sensor_name: str,
+        sensor_row: int,
+    ) -> None:
         super().__init__()
-        self.attrs: Dict[str, Any] = {}
-        self._attr_unique_id = unique_id
-        self._name = name
-        self._state = None
-        self._available = True
+        self.entity_description = f"OpenHR20 ID {thermo_id} - {sensor_name}"
+        self._attr_unique_id = f"{thermo_id}-{sensor_name}"
+        self._attr_name = sensor_name
+        self._attr_state = None
+        self._attr_available = True
         self._db_path = db_path
-        self._attr_icon = "mdi:thermometer"
-        self._attr_temperature_unit = TEMP_CELSIUS
-        self._attr_precision = 0.01
-        self._attr_hvac_modes = [HVAC_MODE_HEAT]
-        self._attr_hvac_mode = HVAC_MODE_HEAT
-        self._attr_supported_features = SUPPORT_TARGET_TEMPERATURE
+        self._thermo_id = thermo_id
+        self._thermo_name = thermo_name
+        self._sensor_row = sensor_row
+        # self._attr_icon = "mdi:thermometer"
+
+    async def async_update(self):
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
+                (self._thermo_id,),
+            ) as cursor:
+                async for row in cursor:
+                    self._attr_state = row[self._sensor_row]
+                    # time = datetime.utcfromtimestamp(row[2])
+        # set available  = True if update more recent than 5 minutes
+        # self._available = datetime.utcnow() - time <= timedelta(minutes=5)
 
     @property
     def device_info(self):
         return {
             "identifiers": {
                 # Serial numbers are unique identifiers within a specific domain
-                ("openhr20", self.unique_id)
+                (DOMAIN, self._thermo_id)
             },
-            "name": self.name,
+            "name": self._thermo_name,
             "manufacturer": "OpenHR20",
-            "model": "Custom model 1",
+            "model": "HR20",
             "sw_version": "0.1.1",
         }
 
-    async def async_update(self):
-        async with aiosqlite.connect(self._db_path) as db:
-            async with db.execute(
-                "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
-                (self._attr_unique_id,),
-            ) as cursor:
-                async for row in cursor:
-                    # time = datetime.utcfromtimestamp(row[2])
-                    self._attr_extra_state_attributes = {}
-                    self._attr_extra_state_attributes["mode"] = row[3]
-                    self._attr_extra_state_attributes["valve"] = int(row[4])
-                    self._attr_current_temperature = float(row[5]) / 100
-                    self._attr_target_temperature = float(row[6]) / 100
-                    self._attr_extra_state_attributes["battery_v"] = (
-                        float(row[7]) / 1000
-                    )
-                    self._attr_extra_state_attributes["error"] = bool(row[8])
-                    self._attr_extra_state_attributes["window"] = bool(row[9])
-                    self._attr_extra_state_attributes["force"] = bool(row[10])
-                    self._attr_hvac_action = (
-                        CURRENT_HVAC_OFF
-                        if self._attr_extra_state_attributes["valve"] == 0
-                        else CURRENT_HVAC_HEAT
-                    )
-        # set available  = True if update more recent than 5 minutes
-        # self._available = datetime.utcnow() - time <= timedelta(minutes=5)
+
+# async def async_setup_platform(
+#     hass: HomeAssistantError,
+#     config: ConfigType,
+#     async_add_entities: Callable,
+#     discovery_info: Optional[DiscoveryInfoType] = None,
+# ) -> None:
+#     _LOGGER.info("Starting openhr20")
+#     db_path = config[CONF_FILE_PATH]
+#     if not os.path.isfile(db_path):
+#         raise Error(f"DB file '{db_path}' not found")
+#     if not os.access(db_path, os.R_OK):
+#         raise Error(f"DB file '{db_path}' is not readable")
+#     if not os.access(db_path, os.W_OK):
+#         raise Error(f"DB file '{db_path}' is not writable")
+#     _LOGGER.debug(f"Trying to connect to sqlite DB at '{db_path}'.")
+#     async with aiosqlite.connect(db_path):
+#         _LOGGER.debug("DB connection successful")
+#     sensors = [
+#         OpenHR20Sensor(t[CONF_ID], t[CONF_NAME], db_path) for t in config[CONF_THERMO]
+#     ]
+#     # async_add_entities(sensors, update_before_add=True)
