@@ -1,6 +1,5 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 import logging
-from sqlite3.dbapi2 import Row
 import aiosqlite
 
 from typing import Callable, Optional
@@ -20,11 +19,11 @@ from homeassistant.const import (
     TEMP_CELSIUS,
 )
 
-from .const import DOMAIN, CONF_THERMO
+from .const import DBS_KEY, DOMAIN, CONF_THERMO
 
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(minutes=1)
+SCAN_INTERVAL = timedelta(minutes=4)
 
 ohr20_values_mapping = [
     ("mode", 3),
@@ -41,7 +40,7 @@ ohr20_values_mapping = [
 @dataclass
 class OpenHR20EntityInfo:
     name: str
-    db_selector: Callable[[Row], StateType]
+    db_selector: Callable[[aiosqlite.Row], StateType]
     icon_setter: Callable[[StateType], str]
     unit: Optional[str]
 
@@ -100,12 +99,11 @@ async def async_setup_entry(
     async_add_entities,
 ):
     """Setup sensors from a config entry created in the integrations UI."""
-    # DOMAIN key exc
-    # config = hass.data[DOMAIN][config_entry.entry_id]
     thermo_id, thermo_name = config_entry.data[CONF_THERMO].split("=")
-    db_path = config_entry.data[CONF_FILE_PATH]
+    db_file = config_entry.data[CONF_FILE_PATH]
+    db_conn = hass.data[DOMAIN][DBS_KEY][db_file]
     sensors = [
-        OpenHR20Sensor(thermo_id, thermo_name, db_path, ei)
+        OpenHR20Sensor(thermo_id, thermo_name, db_conn, ei)
         for ei in ohr20_entities_info
     ]
     async_add_entities(sensors, update_before_add=True)
@@ -116,7 +114,7 @@ class OpenHR20Sensor(Entity):
         self,
         thermo_id: str,
         thermo_name: str,
-        db_path: str,
+        db_conn: aiosqlite.Connection,
         entity_info: OpenHR20EntityInfo,
     ) -> None:
         super().__init__()
@@ -124,7 +122,7 @@ class OpenHR20Sensor(Entity):
         self._attr_name = entity_info.name
         self._attr_state = None
         self._attr_available = True
-        self._db_path = db_path
+        self._db_conn = db_conn
         self._thermo_id = thermo_id
         self._thermo_name = thermo_name
         self._icon_setter = entity_info.icon_setter
@@ -133,17 +131,16 @@ class OpenHR20Sensor(Entity):
         self._db_selector = entity_info.db_selector
 
     async def async_update(self):
-        async with aiosqlite.connect(self._db_path) as db:
-            async with db.execute(
-                "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
-                (self._thermo_id,),
-            ) as cursor:
-                async for row in cursor:
-                    self._attr_state = self._db_selector(row)
-                    self._attr_icon = self._icon_setter(self._attr_state)
-                    # time = datetime.utcfromtimestamp(row[2])
-        # set available  = True if update more recent than 5 minutes
-        # self._available = datetime.utcnow() - time <= timedelta(minutes=5)
+        async with self._db_conn.execute(
+            "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
+            (self._thermo_id,),
+        ) as cursor:
+            async for row in cursor:
+                self._attr_state = self._db_selector(row)
+                self._attr_icon = self._icon_setter(self._attr_state)
+                time = datetime.utcfromtimestamp(row[2])
+                # set available  = True if update more recent than 3 * SCAN_INTERVAL
+                self._attr_available = datetime.utcnow() - time <= SCAN_INTERVAL * 3
 
     @property
     def device_info(self):
@@ -154,6 +151,6 @@ class OpenHR20Sensor(Entity):
             },
             "name": self._thermo_name,
             "manufacturer": "OpenHR20",
-            "model": "HR20",
+            "model": "Honeywell Rondostat HR20",
             "sw_version": "0.1.1",
         }

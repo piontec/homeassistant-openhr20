@@ -1,21 +1,26 @@
 """The openhr20 integration."""
 from __future__ import annotations
 
+import aiosqlite
+
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_FILE_PATH
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import DBS_KEY, DOMAIN
 
-# TODO List the platforms that you want to support.
-# For your initial PR, limit it to 1 platform.
 PLATFORMS: list[str] = ["sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up openhr20 from a config entry."""
-    # TODO Store an API object for your platforms to access
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
+
+    db_file = entry.data[CONF_FILE_PATH]
+    hass.data[DOMAIN].setdefault(DBS_KEY, {})
+    if db_file not in hass.data[DOMAIN][DBS_KEY]:
+        hass.data[DOMAIN][DBS_KEY][db_file] = await aiosqlite.connect(db_file)
 
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
 
@@ -29,5 +34,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # if you saved any sessions, remove them here
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+        db_file = entry.data[CONF_FILE_PATH]
+        if db_file in hass.data[DOMAIN][DBS_KEY]:
+            await hass.data[DOMAIN][DBS_KEY][db_file].close()
+            hass.data[DOMAIN][DBS_KEY].pop(db_file)
 
     return unload_ok

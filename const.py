@@ -3,3 +3,4 @@
 DOMAIN = "openhr20"
 
 CONF_THERMO = "thermostats"
+DBS_KEY = "dbs"

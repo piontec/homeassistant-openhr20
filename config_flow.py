@@ -15,12 +15,8 @@ import aiosqlite
 
 from homeassistant.const import (
     CONF_FILE_PATH,
-    CONF_ID,
-    CONF_NAME,
 )
 from homeassistant.exceptions import HomeAssistantError
-
-import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, CONF_THERMO
 
