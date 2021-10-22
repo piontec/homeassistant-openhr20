@@ -4,16 +4,14 @@
             "already_configured": "Device is already configured"
         },
         "error": {
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
+            "db_error": "SQLite DB file cannot be accessed",
             "unknown": "Unexpected error"
         },
         "step": {
             "user": {
                 "data": {
-                    "host": "Host",
-                    "password": "Password",
-                    "username": "Username"
+                    "file_path": "SQLite DB file path",
+                    "thermostats": "Thermostat config ([ID]=[name])"
                 }
             }
         }

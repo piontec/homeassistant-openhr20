@@ -36,11 +36,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     db_path = data[CONF_FILE_PATH]
     if not os.path.isfile(db_path):
-        raise HomeAssistantError(f"DB file '{db_path}' not found")
+        raise DBError(f"DB file '{db_path}' not found")
     if not os.access(db_path, os.R_OK):
-        raise HomeAssistantError(f"DB file '{db_path}' is not readable")
+        raise DBError(f"DB file '{db_path}' is not readable")
     if not os.access(db_path, os.W_OK):
-        raise HomeAssistantError(f"DB file '{db_path}' is not writable")
+        raise DBError(f"DB file '{db_path}' is not writable")
     _LOGGER.debug(f"Trying to connect to sqlite DB at '{db_path}'.")
     async with aiosqlite.connect(db_path):
         _LOGGER.debug("DB connection successful")
@@ -64,6 +64,8 @@ class OpenHR20ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             info = await validate_input(self.hass, user_input)
+        except DBError:
+            errors["base"] = "db_error"
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Unexpected exception")
             errors["base"] = "unknown"
@@ -73,3 +75,7 @@ class OpenHR20ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user", data_schema=OHR20_SCHEMA, errors=errors
         )
+
+
+class DBError(HomeAssistantError):
+    pass
