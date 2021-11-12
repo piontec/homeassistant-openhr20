@@ -101,10 +101,9 @@ async def async_setup_entry(
     """Setup sensors from a config entry created in the integrations UI."""
     thermo_id, thermo_name = config_entry.data[CONF_THERMO].split("=")
     db_file = config_entry.data[CONF_FILE_PATH]
-    db_conn = hass.data[DOMAIN][DBS_KEY][db_file]
-    _LOGGER.debug(f"Platform setup, db_file is '{db_file}', db_conn is '{db_conn}'")
+    _LOGGER.debug(f"Platform setup, db_file is '{db_file}'")
     sensors = [
-        OpenHR20Sensor(thermo_id, thermo_name, db_conn, ei)
+        OpenHR20Sensor(thermo_id, thermo_name, db_file, ei)
         for ei in ohr20_entities_info
     ]
     async_add_entities(sensors, update_before_add=True)
@@ -115,7 +114,7 @@ class OpenHR20Sensor(Entity):
         self,
         thermo_id: str,
         thermo_name: str,
-        db_conn: aiosqlite.Connection,
+        db_file: str,
         entity_info: OpenHR20EntityInfo,
     ) -> None:
         super().__init__()
@@ -123,7 +122,7 @@ class OpenHR20Sensor(Entity):
         self._attr_name = entity_info.name
         self._attr_state = None
         self._attr_available = True
-        self._db_conn = db_conn
+        self._db_file = db_file
         self._thermo_id = thermo_id
         self._thermo_name = thermo_name
         self._icon_setter = entity_info.icon_setter
@@ -133,17 +132,18 @@ class OpenHR20Sensor(Entity):
 
     async def async_update(self):
         _LOGGER.debug(f"Attempting DB update for openhr id '{self._thermo_id}'")
-        async with self._db_conn.execute(
-            "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
-            (self._thermo_id,),
-        ) as cursor:
-            _LOGGER.debug(f"Got DB update for openhr id '{self._thermo_id}'")
-            async for row in cursor:
-                self._attr_state = self._db_selector(row)
-                self._attr_icon = self._icon_setter(self._attr_state)
-                time = datetime.utcfromtimestamp(row[2])
-                # set available  = True if update more recent than 3 * SCAN_INTERVAL
-                self._attr_available = datetime.utcnow() - time <= SCAN_INTERVAL * 3
+        async with aiosqlite.connect(self._db_file) as db:
+            async with db.execute(
+                "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
+                (self._thermo_id,),
+            ) as cursor:
+                _LOGGER.debug(f"Got DB update for openhr id '{self._thermo_id}'")
+                async for row in cursor:
+                    self._attr_state = self._db_selector(row)
+                    self._attr_icon = self._icon_setter(self._attr_state)
+                    time = datetime.utcfromtimestamp(row[2])
+                    # set available  = True if update more recent than 3 * SCAN_INTERVAL
+                    self._attr_available = datetime.utcnow() - time <= SCAN_INTERVAL * 3
 
     @property
     def device_info(self):

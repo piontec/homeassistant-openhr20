@@ -22,9 +22,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     db_file = entry.data[CONF_FILE_PATH]
     hass.data[DOMAIN].setdefault(DBS_KEY, {})
-    if db_file not in hass.data[DOMAIN][DBS_KEY]:
-        _LOGGER.info(f"DB connection for file '{db_file}' not found, creating it")
-        hass.data[DOMAIN][DBS_KEY][db_file] = await aiosqlite.connect(db_file)
+    hass.data[DOMAIN][DBS_KEY] = db_file
+    # if db_file not in hass.data[DOMAIN][DBS_KEY]:
+        # _LOGGER.info(f"DB connection for file '{db_file}' not found, creating it")
+        # hass.data[DOMAIN][DBS_KEY][db_file] = await aiosqlite.connect(db_file)
 
     _LOGGER.debug("calling setup_platforms")
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
@@ -39,9 +40,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # if you saved any sessions, remove them here
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
-        db_file = entry.data[CONF_FILE_PATH]
-        if db_file in hass.data[DOMAIN][DBS_KEY]:
-            await hass.data[DOMAIN][DBS_KEY][db_file].close()
-            hass.data[DOMAIN][DBS_KEY].pop(db_file)
+        hass.data[DOMAIN].pop(DBS_KEY)
+        # db_file = entry.data[CONF_FILE_PATH]
+        # if db_file in hass.data[DOMAIN][DBS_KEY]:
+            # await hass.data[DOMAIN][DBS_KEY][db_file].close()
+            # hass.data[DOMAIN][DBS_KEY].pop(db_file)
 
     return unload_ok
