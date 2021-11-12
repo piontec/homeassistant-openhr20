@@ -133,17 +133,20 @@ class OpenHR20Sensor(Entity):
     async def async_update(self):
         _LOGGER.debug(f"Attempting DB update for openhr id '{self._thermo_id}'")
         async with aiosqlite.connect(self._db_file) as db:
-            async with db.execute(
-                "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
-                (self._thermo_id,),
-            ) as cursor:
-                _LOGGER.debug(f"Got DB update for openhr id '{self._thermo_id}'")
-                async for row in cursor:
-                    self._attr_state = self._db_selector(row)
-                    self._attr_icon = self._icon_setter(self._attr_state)
-                    time = datetime.utcfromtimestamp(row[2])
-                    # set available  = True if update more recent than 3 * SCAN_INTERVAL
-                    self._attr_available = datetime.utcnow() - time <= SCAN_INTERVAL * 3
+            try:
+                async with db.execute(
+                    "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
+                    (self._thermo_id,),
+                ) as cursor:
+                    _LOGGER.debug(f"Got DB update for openhr id '{self._thermo_id}'")
+                    async for row in cursor:
+                        self._attr_state = self._db_selector(row)
+                        self._attr_icon = self._icon_setter(self._attr_state)
+                        time = datetime.utcfromtimestamp(row[2])
+                        # set available  = True if update more recent than 3 * SCAN_INTERVAL
+                        self._attr_available = datetime.utcnow() - time <= SCAN_INTERVAL * 3
+            except Exception as e:
+                _LOGGER.warning(f"Exception: '{str(e)}'")
 
     @property
     def device_info(self):
