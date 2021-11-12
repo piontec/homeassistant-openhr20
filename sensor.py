@@ -102,6 +102,7 @@ async def async_setup_entry(
     thermo_id, thermo_name = config_entry.data[CONF_THERMO].split("=")
     db_file = config_entry.data[CONF_FILE_PATH]
     db_conn = hass.data[DOMAIN][DBS_KEY][db_file]
+    _LOGGER.debug(f"Platform setup, db_file is '{db_file}', db_conn is '{db_conn}'")
     sensors = [
         OpenHR20Sensor(thermo_id, thermo_name, db_conn, ei)
         for ei in ohr20_entities_info
@@ -131,10 +132,12 @@ class OpenHR20Sensor(Entity):
         self._db_selector = entity_info.db_selector
 
     async def async_update(self):
+        _LOGGER.debug(f"Attempting DB update for openhr id '{self._thermo_id}'")
         async with self._db_conn.execute(
             "SELECT * FROM log WHERE addr=(?) order by time desc limit 1",
             (self._thermo_id,),
         ) as cursor:
+            _LOGGER.debug(f"Got DB update for openhr id '{self._thermo_id}'")
             async for row in cursor:
                 self._attr_state = self._db_selector(row)
                 self._attr_icon = self._icon_setter(self._attr_state)

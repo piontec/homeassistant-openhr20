@@ -1,5 +1,6 @@
 """The openhr20 integration."""
 from __future__ import annotations
+import logging
 
 import aiosqlite
 
@@ -11,6 +12,8 @@ from .const import DBS_KEY, DOMAIN
 
 PLATFORMS: list[str] = ["sensor"]
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up openhr20 from a config entry."""
@@ -20,8 +23,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     db_file = entry.data[CONF_FILE_PATH]
     hass.data[DOMAIN].setdefault(DBS_KEY, {})
     if db_file not in hass.data[DOMAIN][DBS_KEY]:
+        _LOGGER.info(f"DB connection for file '{db_file}' not found, creating it")
         hass.data[DOMAIN][DBS_KEY][db_file] = await aiosqlite.connect(db_file)
 
+    _LOGGER.debug("calling setup_platforms")
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
 
     return True
